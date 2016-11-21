@@ -1,7 +1,11 @@
 package edu.kvcc.cis298.criminalintent;
 
+import android.content.ContentValues;
 import android.content.Context;
+import android.database.Cursor;
+import android.database.CursorWrapper;
 import android.database.sqlite.SQLiteDatabase;
+import android.media.session.PlaybackState;
 import android.util.Log;
 
 import java.text.DateFormat;
@@ -14,6 +18,10 @@ import java.util.Scanner;
 import java.util.UUID;
 
 import edu.kvcc.cis298.criminalintent.database.CrimeBaseHelper;
+import edu.kvcc.cis298.criminalintent.database.CrimeCursorWrapper;
+import edu.kvcc.cis298.criminalintent.database.CrimeDbSchema;
+
+import static edu.kvcc.cis298.criminalintent.database.CrimeDbSchema.*;
 
 /**
  * Created by dbarnes on 10/19/2016.
@@ -21,7 +29,6 @@ import edu.kvcc.cis298.criminalintent.database.CrimeBaseHelper;
 public class CrimeLab {
     //Static variable to hold the instance of the CrimeLab
     private static CrimeLab sCrimeLab;
-    private List<Crime> mCrimes;
 
     //Class level variable to hold the sqlite database.
     private SQLiteDatabase mDatabase;
@@ -43,93 +50,104 @@ public class CrimeLab {
     //This is the constructor. It is private.
     //It can't be used from outside classes.
     private CrimeLab(Context context) {
-        //Create a new array list of crimes
-        mCrimes = new ArrayList<>();
         //Set the class level context to the one passed in.
         mContext = context.getApplicationContext();
         //Set the class level database
         mDatabase = new CrimeBaseHelper(mContext)
                 .getWritableDatabase();
-
-        //Load the crime list
-        loadCrimeList();
     }
 
     public void addCrime(Crime c) {
-        mCrimes.add(c);
+        // >This will call the geContentValues method defined below and...
+        // >...retrieve the key value for each property of the crime.
+        ContentValues values = getContentValues(c);
+
+        // >Insert a new record into the database using the values.
+        mDatabase.insert(CrimeTable.NAME, null, values);
     }
 
     public List<Crime> getCrimes() {
-        return mCrimes;
+        List<Crime> crimes = new ArrayList<>();
+
+        // >Define a crimeCursorWrapper to be used when reading the DB.
+        // >null for where clause and arguments, to select all records.
+        CrimeCursorWrapper cursor = queryCrimes(null, null);
+
+        try {
+            cursor.moveToFirst();
+            // >While the cursor is not after the last record in teh result set of executing the query.
+            while (!cursor.isAfterLast()) {
+                crimes.add(cursor.getCrime());
+                cursor.moveToNext();
+            }
+        } finally {
+            cursor.close();
+        }
+
+        return crimes;
     }
 
     public Crime getCrime(UUID id) {
-        //This is a foreach loop. Syntax is different than C#
-        for (Crime crime : mCrimes) {
-            //If the current crime we are looking at has a id that
-            //matches the passed in one, we return the crime
-            if (crime.getId().equals(id)) {
-                return crime;
-            }
-        }
-        //Didn't find a match, return null.
-        return null;
-    }
-
-    private void loadCrimeList() {
-
-        //Define a Scanner which will be used to read in the file
-        Scanner scanner = null;
+        CrimeCursorWrapper cursor = queryCrimes(
+                // >where clause
+                CrimeTable.Cols.UUID + " = ?"
+                // >args for the clause
+                , new String[] { id.toString() }
+        );
 
         try {
-            //instanciate a new scanner
-            //Use some method chaining to get access to the file.
-            //Use the context to get at resources, and once we have the resources
-            //call openRawResource passing in the location of the file.
-            //The location of the file will be R.raw."The name of the file"
-            //Remember that files here must be all lowercase.
-            scanner = new Scanner(mContext.getResources().openRawResource(R.raw.crimes));
-
-            //while the scanner has another line to read
-            while(scanner.hasNextLine()) {
-
-                //Get the next line and split it into parts
-                String line = scanner.nextLine();
-                String parts[] = line.split(",");
-
-                //Assign each part to a local variable
-                String stringUUID = parts[0];
-                String title = parts[1];
-                String stringDate = parts[2];
-                String stringSolved = parts[3];
-
-                //Setup some vars for doing parsing
-                UUID uuid = UUID.fromString(stringUUID);
-
-                //Create a new DateFormat to use in parsing the date
-                DateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH);
-                //Use the new format to parts the string date.
-                Date date = format.parse(stringDate);
-
-                //Set a bool as to whether it is solved or not
-                //This is a ternary operator. It is a shorthand if else
-                //The part between the ? and : happens when true.
-                //The part after the : happens when false.
-                boolean solved = (stringSolved.equals("1")) ? true : false;
-
-                //Add the Crime to the list
-                mCrimes.add(new Crime(uuid, title, date, solved));
+            if (cursor.getCount() == 0) {
+                return null;
             }
 
-        } catch (Exception e) {
-            //On exception, just log out the exception to string
-            Log.e("Read CSV", e.toString());
+            cursor.moveToFirst();
+            return cursor.getCrime();
         } finally {
-            //Check to make sure that the scanner actually got instanciated
-            //and if so, close it.
-            if (scanner != null) {
-                scanner.close();
-            }
+            cursor.close();
         }
     }
+
+    public void updateCrime(Crime crime) {
+        String uuidString = crime.getId().toString();
+        // >Get values from the crime.
+        ContentValues values = getContentValues(crime);
+        // >Update the table.
+        // >takes in the table name, update values, and the where clause to determine which
+        // >record to update.
+        mDatabase.update(CrimeTable.NAME, values
+                // >This makes the where clause paramaterized to prevent sql injection.
+                , CrimeTable.Cols.UUID + " = ?",
+                new String[] { uuidString});
+    }
+
+    private static ContentValues getContentValues(Crime crime) {
+        // >Make a content values object that will store key => value.
+        // >As far as teh DB is concerned this will be the table column we want to...
+        // >...insert to, and then the value to insert. This means that we need a...
+        // >...statement for every column in the database, and an associated value.
+        ContentValues values = new ContentValues();
+        // >Put in the table column name, and the associated crime fields value.
+        values.put(CrimeTable.Cols.UUID, crime.getId().toString());
+        values.put(CrimeTable.Cols.TITLE, crime.getTitle());
+        values.put(CrimeTable.Cols.DATE, crime.getDate().getTime());
+        values.put(CrimeTable.Cols.SOLVED, crime.isSolved() ? 1: 0);
+
+        return values;
+    }
+
+    private CrimeCursorWrapper queryCrimes(String whereClause, String[] whereArgs) {
+        Cursor cursor = mDatabase.query(
+                CrimeTable.NAME
+                , null // >Columns - null selects all columns.
+                , whereClause
+                , whereArgs
+                , null // >groupBy
+                , null // >having
+                , null // >orderBy
+        );
+        return new CrimeCursorWrapper(cursor);
+    }
+
+
+
 }
