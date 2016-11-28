@@ -24,6 +24,8 @@ import edu.kvcc.cis298.criminalintent.database.CrimeDbSchema.CrimeTable;
 public class CrimeBaseHelper extends SQLiteOpenHelper {
 
     Context mContext;
+    // >Add a flag to
+    boolean mSeedDatabase;
 
     //Version number that can be used to trigger a call to onUpgrade.
     //If when the application starts, the existing database version number
@@ -36,6 +38,8 @@ public class CrimeBaseHelper extends SQLiteOpenHelper {
     public CrimeBaseHelper(Context context) {
         super(context, DATABASE_NAME, null, VERSION);
         mContext = context;
+        // >Initialize the seed
+        mSeedDatabase = false;
     }
 
     //onCreate method that will be called to create the database
@@ -52,8 +56,8 @@ public class CrimeBaseHelper extends SQLiteOpenHelper {
                 ")"
         );
 
-        // >Now that the table is created, we can use the csv to seed the database.
-        //loadCrimeList();
+        // >Flip the seed flag.
+        mSeedDatabase = true;
     }
 
     //onUpgrade method that will be called if the version number
@@ -61,6 +65,17 @@ public class CrimeBaseHelper extends SQLiteOpenHelper {
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         //Going to leave this blank. We won't do work here.
+    }
+
+    @Override
+    public void onOpen(SQLiteDatabase db) {
+        super.onOpen(db);
+
+        // >Check to see if we should seed the database.
+        if (mSeedDatabase) {
+            loadCrimeList();
+            mSeedDatabase = false;
+        }
     }
 
     private void loadCrimeList() {
