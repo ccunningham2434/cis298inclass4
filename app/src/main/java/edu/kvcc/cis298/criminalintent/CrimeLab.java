@@ -131,6 +131,9 @@ public class CrimeLab {
         values.put(CrimeTable.Cols.TITLE, crime.getTitle());
         values.put(CrimeTable.Cols.DATE, crime.getDate().getTime());
         values.put(CrimeTable.Cols.SOLVED, crime.isSolved() ? 1: 0);
+        // >We don't set a suspect on Crime creation, so the getSuspect method will always...
+        // >...return null until the buttons to select a suspect are used.
+        values.put(CrimeTable.Cols.SUSPECT, crime.getSuspect());
 
         return values;
     }
